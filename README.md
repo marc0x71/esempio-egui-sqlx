@@ -1,5 +1,7 @@
 # Todo SQLx: egui + sqlx in un contesto async
 
+> 🇬🇧 **English version below:** [jump to the English version](#english-version)
+
 Una piccola app di todo scritta in Rust con [egui](https://github.com/emilk/egui)/eframe per l'interfaccia e [sqlx](https://github.com/launchbadge/sqlx) su SQLite per la persistenza.
 
 Non è un'applicazione da usare, ma un **modello di riferimento**: mostra un modo semplice e corretto per far dialogare un'interfaccia immediate mode, sincrona per natura, con una libreria di accesso ai dati asincrona.
@@ -84,6 +86,12 @@ Ogni livello conosce solo quello immediatamente sotto:
 | `db/worker.rs` | comandi, eventi, repository | canali e UI |
 | `db/repository.rs` | sqlx e SQL | tutto il resto |
 
+## Aspetto grafico
+
+L'interfaccia usa [modern-egui](https://crates.io/crates/modern-egui), una mia piccola libreria che aggiunge a egui un tema moderno chiaro e scuro, una palette di colori, valori predefiniti per spaziature e dimensioni dei caratteri e alcuni metodi di comodo su `egui::Ui` (come `primary_button` o `muted_label`). Dipende solo da egui, quindi funziona con qualsiasi integrazione, non solo con eframe.
+
+In questo progetto serve soltanto per lo stile: la parte che riguarda egui e sqlx non dipende da essa.
+
 ## Scelte di progetto
 
 ### Il runtime è creato a mano
@@ -117,7 +125,7 @@ Alla chiusura della finestra, il `Drop` di `DbHandle`:
 2. aspetta la fine del worker con `block_on`, lecito perché `drop` gira sul thread della UI e non dentro il runtime;
 3. solo a quel punto lascia distruggere il runtime.
 
-Il worker, uscito dal ciclo, chiude il pool con `pool.close().await`. Senza questo passaggio il runtime verrebbe distrutto per primo e cancellerebbe il worker anche nel mezzo di una query.
+Quando il worker termina, il pool che possedeva viene distrutto e le connessioni vengono rilasciate. Senza questa sequenza il runtime verrebbe distrutto per primo e cancellerebbe il worker anche nel mezzo di una query.
 
 ## Avvio
 
@@ -139,4 +147,157 @@ Il progetto resta volutamente minimale. Alcuni passi naturali per portarlo verso
 
 ## Licenza
 
-<!-- Indica qui la licenza scelta, per esempio MIT o Apache-2.0 -->
+Distribuito con licenza MIT. Il testo completo è nel file [LICENSE](LICENSE).
+
+---
+
+## English version
+
+> 🇮🇹 [Torna alla versione italiana](#todo-sqlx-egui--sqlx-in-un-contesto-async)
+
+A small todo app written in Rust, using [egui](https://github.com/emilk/egui)/eframe for the UI and [sqlx](https://github.com/launchbadge/sqlx) on SQLite for persistence.
+
+It is not meant to be used as an application, but as a **reference model**: it shows a simple and correct way to make an immediate mode UI, which is synchronous by nature, work with an asynchronous data access library.
+
+### The problem
+
+egui redraws the interface dozens of times per second by calling **synchronous** code: you cannot `await` inside the drawing function, and any slow operation freezes the window.
+
+sqlx, on the other hand, is **asynchronous**: every query returns a `Future` that must be driven by a runtime such as Tokio.
+
+So we need two separate worlds that communicate without waiting on each other.
+
+### Architecture at a glance
+
+```mermaid
+flowchart LR
+    subgraph UI["UI thread (eframe)"]
+        App["TodoApp<br/>state + drawing"]
+    end
+
+    subgraph RT["Tokio runtime"]
+        Worker["Worker<br/>runs commands in order"]
+        Pool[("SqlitePool")]
+    end
+
+    App -- "DbCommand<br/>(mpsc channel)" --> Worker
+    Worker -- "DbEvent<br/>(mpsc channel)" --> App
+    Worker -- "request_repaint()" --> App
+    Worker <--> Pool
+```
+
+- The UI **never runs queries**: it sends a command (`DbCommand`) over a channel and keeps drawing.
+- A **worker** living in the Tokio runtime receives commands, runs them against the database and sends the result back as an event (`DbEvent`) over a second channel.
+- On every frame the UI drains the event channel with `try_recv()`, which never blocks, and updates its state.
+- After sending an event, the worker calls `ctx.request_repaint()`: without it, egui, which only redraws when something happens, would show the new data only on the next mouse movement.
+
+### Lifecycle of a command
+
+Here is what happens when the user adds a todo:
+
+```mermaid
+sequenceDiagram
+    participant U as UI (TodoApp)
+    participant W as Worker (Tokio)
+    participant DB as SQLite
+
+    U->>W: DbCommand::AddTodo { title }
+    Note over U: the UI keeps drawing
+    W->>DB: INSERT INTO todos ...
+    DB-->>W: ok
+    W-->>U: DbEvent::TodoAdded
+    W->>U: request_repaint()
+    U->>W: DbCommand::LoadTodos
+    W->>DB: SELECT ... FROM todos
+    DB-->>W: rows
+    W-->>U: DbEvent::TodosLoaded(Vec<Todo>)
+    W->>U: request_repaint()
+    Note over U: on the next frame the list is up to date
+```
+
+After every change the UI reloads the whole list. This is a deliberate choice to keep the model simple: what is displayed always matches the database. The [Possible improvements](#possible-improvements) section describes a more efficient alternative.
+
+### Code structure
+
+```
+src/
+├── main.rs            startup: Tokio runtime, pool, DB initialization, eframe
+├── model.rs           Todo struct (FromRow)
+├── app.rs             TodoApp: UI state, event handling, drawing
+└── db/
+    ├── mod.rs         DbCommand, DbEvent, DbHandle (channels + worker)
+    ├── worker.rs      handle_command: maps a command to a repository call
+    └── repository.rs  SQL queries, one async function per operation
+```
+
+Each layer only knows about the one directly below it:
+
+| Module | Knows about | Doesn't know about |
+|---|---|---|
+| `app.rs` | `DbHandle`, `DbCommand`, `DbEvent` | Tokio, sqlx, SQL |
+| `db/mod.rs` | channels, runtime, worker | the UI (only `egui::Context` for repainting) |
+| `db/worker.rs` | commands, events, repository | channels and UI |
+| `db/repository.rs` | sqlx and SQL | everything else |
+
+### Look and feel
+
+The UI uses [modern-egui](https://crates.io/crates/modern-egui), a small library of mine that adds to egui a modern light and dark theme, a color palette, design tokens for spacing and font sizes, and a few convenience methods on `egui::Ui` (such as `primary_button` or `muted_label`). It depends only on egui, so it works with any egui integration, not just eframe.
+
+In this project it is used for styling only: the egui + sqlx part doesn't depend on it.
+
+### Design choices
+
+#### The runtime is built manually
+
+`main` does not use `#[tokio::main]`: it builds the runtime explicitly, uses it with `block_on` **only at startup** (creating the pool and the table) and then hands it over to `DbHandle`. This keeps the main thread free for eframe, which wants to own its event loop.
+
+#### Two channels, two types
+
+`DbCommand` (UI → worker) and `DbEvent` (worker → UI) are separate enums. Anyone reading the code immediately sees every possible operation and every possible result, and the compiler forces every case to be handled in `match`.
+
+Both channels are unbounded `tokio::sync::mpsc` channels: sending is synchronous (`send` needs no `await`), so it can be called directly from UI code.
+
+#### The worker is sequential
+
+The worker processes one command at a time, in the order they arrive:
+
+```rust
+while let Some(command) = command_rx.recv().await {
+    let event = handle_command(&pool, command).await;
+    // ...
+}
+```
+
+This guarantees that a `LoadTodos` sent after an `AddTodo` sees the new record. With SQLite, which allows only one writer at a time, running commands in parallel wouldn't bring much benefit anyway.
+
+#### Clean shutdown
+
+When the window is closed, the `Drop` implementation of `DbHandle`:
+
+1. closes the command channel, so the worker runs any queued commands and exits its loop;
+2. waits for the worker to finish with `block_on`, which is allowed because `drop` runs on the UI thread, not inside the runtime;
+3. only then lets the runtime be destroyed.
+
+When the worker ends, the pool it owns is dropped and its connections are released. Without this sequence the runtime would be destroyed first, cancelling the worker even in the middle of a query.
+
+### Running
+
+```sh
+cargo run
+```
+
+On first launch, an `app.db` file with the `todos` table is created in the **directory you run the command from**.
+
+### Possible improvements
+
+The project is intentionally minimal. Some natural next steps towards a real application:
+
+- **Events that carry data.** Instead of reloading the whole list after each change, `TodoAdded(Todo)` (with `INSERT ... RETURNING`), `TodoUpdated { id, done }` and `TodoDeleted { id }` let the UI update its local state directly.
+- **Separate read and write errors.** After a write error it makes sense to reload the data to resync the UI; after a read error it doesn't, otherwise you risk an endless retry loop.
+- **Optimistic updates.** Apply changes to the local state immediately and resync only on error, so the UI responds without waiting for the database.
+- **Migrations** with `sqlx::migrate!()` instead of `CREATE TABLE IF NOT EXISTS`.
+- **Database path** in the user's data directory instead of the current one.
+
+### License
+
+Released under the MIT License. See the [LICENSE](LICENSE) file for the full text.
