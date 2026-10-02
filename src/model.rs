@@ -1,4 +1,4 @@
-use sqlx::prelude::FromRow;
+use sqlx::FromRow;
 
 #[derive(Debug, Clone, FromRow)]
 pub struct Todo {

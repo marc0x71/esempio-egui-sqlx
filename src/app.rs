@@ -1,5 +1,7 @@
-use eframe::egui::{self, Frame, RichText, Stroke};
-use modern_egui::theme::{self, UiButtons, UiInputs, UiMetrics, UiText, metrics, text::StyledText};
+use eframe::egui::{self, Frame, RichText};
+use modern_egui::theme::{
+    self, UiButtons, UiInputs, UiMetrics, UiPanels, UiText, metrics, text::StyledText,
+};
 
 use crate::{
     db::{DbCommand, DbEvent, DbHandle},
@@ -131,41 +133,32 @@ impl eframe::App for TodoApp {
                 if !self.todos.is_empty() {
                     let available_height = ui.available_height();
 
-                    egui::Frame::new()
-                        .fill(p.surface)
-                        .stroke(Stroke::new(1.0, p.border))
-                        .corner_radius(metrics::RADIUS_MD)
-                        .inner_margin(metrics::SPACE_3)
+                    egui::ScrollArea::vertical()
+                        .max_height(available_height)
+                        .auto_shrink([false, false])
                         .show(ui, |ui| {
-                            egui::ScrollArea::vertical()
-                                .max_height(available_height)
-                                .auto_shrink([false, false])
-                                .show(ui, |ui| {
-                                    for (idx, todo) in self.todos.iter().enumerate() {
-                                        if idx > 0 {
-                                            ui.space2();
-                                        }
-                                        ui.horizontal(|ui| {
-                                            if let Some(action) = todo_row(ui, todo) {
-                                                match action {
-                                                    TodoAction::Toggle(done) => {
-                                                        let _ =
-                                                            self.db.send(DbCommand::SetTodoDone {
-                                                                id: todo.id,
-                                                                done,
-                                                            });
-                                                    }
-                                                    TodoAction::Delete => {
-                                                        let _ =
-                                                            self.db.send(DbCommand::DeleteTodo {
-                                                                id: todo.id,
-                                                            });
-                                                    }
-                                                }
+                            for (idx, todo) in self.todos.iter().enumerate() {
+                                if idx > 0 {
+                                    ui.space2();
+                                }
+                                ui.horizontal(|ui| {
+                                    if let Some(action) = todo_row(ui, todo) {
+                                        match action {
+                                            TodoAction::Toggle(done) => {
+                                                let _ = self.db.send(DbCommand::SetTodoDone {
+                                                    id: todo.id,
+                                                    done,
+                                                });
                                             }
-                                        });
+                                            TodoAction::Delete => {
+                                                let _ = self
+                                                    .db
+                                                    .send(DbCommand::DeleteTodo { id: todo.id });
+                                            }
+                                        }
                                     }
                                 });
+                            }
                         });
                 }
             });
@@ -183,23 +176,24 @@ fn todo_row(ui: &mut egui::Ui, todo: &Todo) -> Option<TodoAction> {
 
     let p = theme::Palette::of(ui.ctx());
     let mut done = todo.done;
-
-    if ui.checkbox(&mut done, "").changed() {
-        action = Some(TodoAction::Toggle(done));
-    }
-
-    let title = if done {
-        egui::RichText::new(&todo.title)
-            .color(p.danger)
-            .strikethrough()
-    } else {
-        egui::RichText::new(&todo.title).color(p.text_strong)
-    };
-    ui.label(title.size(metrics::FONT_CT));
-    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-        if ui.danger_button("🗑").clicked() {
-            action = Some(TodoAction::Delete);
+    ui.interactive_card(|ui| {
+        if ui.checkbox(&mut done, "").changed() {
+            action = Some(TodoAction::Toggle(done));
         }
+
+        let title = if done {
+            egui::RichText::new(&todo.title)
+                .color(p.danger)
+                .strikethrough()
+        } else {
+            egui::RichText::new(&todo.title).color(p.text_strong)
+        };
+        ui.label(title.size(metrics::FONT_CT));
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            if ui.danger_button("🗑").clicked() {
+                action = Some(TodoAction::Delete);
+            }
+        });
     });
 
     action

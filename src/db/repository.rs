@@ -1,14 +1,17 @@
-use std::str::FromStr;
+use std::{str::FromStr, time::Duration};
 
 use sqlx::{
     SqlitePool,
-    sqlite::{SqliteConnectOptions, SqlitePoolOptions},
+    sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions},
 };
 
 use crate::model::Todo;
 
 pub async fn create_pool() -> Result<SqlitePool, sqlx::Error> {
-    let options = SqliteConnectOptions::from_str("sqlite://app.db")?.create_if_missing(true);
+    let options = SqliteConnectOptions::from_str("sqlite://app.db")?
+        .create_if_missing(true)
+        .busy_timeout(Duration::from_secs(5))
+        .journal_mode(SqliteJournalMode::Wal);
 
     SqlitePoolOptions::new()
         .max_connections(5)
