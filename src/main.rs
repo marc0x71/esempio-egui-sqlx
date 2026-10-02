@@ -13,7 +13,7 @@ fn main() -> eframe::Result<()> {
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
-        .expect("errore creando Tokio");
+        .expect("Error creating the Tokio runtime");
 
     let pool = runtime
         .block_on(async {
@@ -21,7 +21,7 @@ fn main() -> eframe::Result<()> {
             initialize(&pool).await?;
             Ok::<_, sqlx::Error>(pool)
         })
-        .expect("errore inizializzando il DB");
+        .expect("Error initializing the DB");
 
     eframe::run_native(
         "Todo SQLx",

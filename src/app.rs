@@ -101,12 +101,12 @@ impl eframe::App for TodoApp {
 
                 ui.horizontal(|ui| {
                     let response =
-                        ui.text_input_hint(&mut self.new_title, "Cosa dobbiamo aggiungere?");
+                        ui.text_input_hint(&mut self.new_title, "What do we need to add?");
 
                     let enter_pressed =
                         response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
 
-                    if ui.primary_button("Aggiungi").clicked() || enter_pressed {
+                    if ui.primary_button("Add").clicked() || enter_pressed {
                         self.add_todo();
                         response.request_focus();
                     }
@@ -118,7 +118,7 @@ impl eframe::App for TodoApp {
                 if let Some(error) = &self.error {
                     ui.horizontal(|ui| {
                         ui.add(
-                            StyledText::new(format!("Errore: {error}"))
+                            StyledText::new(format!("Error: {error}"))
                                 .size(theme::text::TextSize::Lg)
                                 .color(theme::text::TextColor::Danger),
                         );
