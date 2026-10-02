@@ -1,4 +1,4 @@
-use eframe::egui::{self, Frame, RichText};
+use eframe::egui::{self, Frame, RichText, Widget};
 use modern_egui::theme::{
     self, UiButtons, UiInputs, UiMetrics, UiPanels, UiText, metrics, text::StyledText,
 };
@@ -142,7 +142,9 @@ impl eframe::App for TodoApp {
                                     ui.space2();
                                 }
                                 ui.horizontal(|ui| {
-                                    if let Some(action) = todo_row(ui, todo) {
+                                    let mut t = TodoWidget::new(todo);
+                                    ui.add(&mut t);
+                                    if let Some(action) = t.take_action() {
                                         match action {
                                             TodoAction::Toggle(done) => {
                                                 let _ = self.db.send(DbCommand::SetTodoDone {
@@ -165,36 +167,50 @@ impl eframe::App for TodoApp {
     }
 }
 
+pub struct TodoWidget<'a> {
+    todo: &'a Todo,
+    action: Option<TodoAction>,
+}
+
+impl<'a> TodoWidget<'a> {
+    fn new(todo: &'a Todo) -> Self {
+        Self { todo, action: None }
+    }
+
+    fn take_action(&mut self) -> Option<TodoAction> {
+        self.action.take()
+    }
+}
+
+impl Widget for &mut TodoWidget<'_> {
+    fn ui(self, ui: &mut egui::Ui) -> egui::Response {
+        let mut done = self.todo.done;
+        let p = theme::Palette::of(ui.ctx());
+        ui.interactive_card(|ui| {
+            if ui.checkbox(&mut done, "").changed() {
+                self.action = Some(TodoAction::Toggle(done))
+            }
+
+            let title = if done {
+                egui::RichText::new(&self.todo.title)
+                    .color(p.danger)
+                    .strikethrough()
+            } else {
+                egui::RichText::new(&self.todo.title).color(p.text_strong)
+            };
+            ui.label(title.size(metrics::FONT_CT));
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui.danger_button("🗑").clicked() {
+                    self.action = Some(TodoAction::Delete)
+                }
+            });
+        })
+        .response
+    }
+}
+
 #[derive(Debug)]
 enum TodoAction {
     Toggle(bool),
     Delete,
-}
-
-fn todo_row(ui: &mut egui::Ui, todo: &Todo) -> Option<TodoAction> {
-    let mut action = None;
-
-    let p = theme::Palette::of(ui.ctx());
-    let mut done = todo.done;
-    ui.interactive_card(|ui| {
-        if ui.checkbox(&mut done, "").changed() {
-            action = Some(TodoAction::Toggle(done));
-        }
-
-        let title = if done {
-            egui::RichText::new(&todo.title)
-                .color(p.danger)
-                .strikethrough()
-        } else {
-            egui::RichText::new(&todo.title).color(p.text_strong)
-        };
-        ui.label(title.size(metrics::FONT_CT));
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if ui.danger_button("🗑").clicked() {
-                action = Some(TodoAction::Delete);
-            }
-        });
-    });
-
-    action
 }
