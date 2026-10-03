@@ -6,6 +6,7 @@ use tokio::{runtime::Runtime, sync::mpsc, task::JoinHandle};
 pub mod repository;
 pub mod worker;
 
+#[derive(Debug)]
 pub enum DbCommand {
     LoadTodos,
     AddTodo { title: String },
@@ -13,6 +14,7 @@ pub enum DbCommand {
     DeleteTodo { id: i64 },
 }
 
+#[derive(Debug)]
 pub enum DbEvent {
     TodosLoaded(Vec<Todo>),
     TodoAdded,
@@ -81,5 +83,179 @@ impl Drop for DbHandle {
         }
 
         // 3. Destroy runtime
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::db::repository::initialize;
+
+    use super::*;
+    use sqlx::sqlite::SqlitePoolOptions;
+
+    fn test_db_handle() -> DbHandle {
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+
+        let pool = runtime.block_on(async {
+            let pool = SqlitePoolOptions::new()
+                .max_connections(1)
+                .connect("sqlite::memory:")
+                .await
+                .unwrap();
+
+            initialize(&pool).await.unwrap();
+
+            pool
+        });
+
+        DbHandle::new(runtime, pool, egui::Context::default())
+    }
+
+    fn wait_for_event(db: &mut DbHandle) -> DbEvent {
+        for _ in 0..100 {
+            if let Some(event) = db.try_recv() {
+                return event;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        panic!("timeout waiting for database event");
+    }
+
+    #[test]
+    fn load_todos_returns_empty_list() {
+        let mut db = test_db_handle();
+
+        db.send(DbCommand::LoadTodos).unwrap();
+        let event = wait_for_event(&mut db);
+
+        match event {
+            DbEvent::TodosLoaded(todos) => {
+                assert!(todos.is_empty());
+            }
+            other => {
+                panic!("unexpected event: {other:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn add_todo_emits_todo_added() {
+        let mut db = test_db_handle();
+
+        db.send(DbCommand::AddTodo {
+            title: "Buy milk".into(),
+        })
+        .unwrap();
+
+        let event = wait_for_event(&mut db);
+
+        assert!(matches!(event, DbEvent::TodoAdded));
+    }
+
+    #[test]
+    fn add_todo_persists_todo() {
+        let mut db = test_db_handle();
+
+        db.send(DbCommand::AddTodo {
+            title: "Buy milk".into(),
+        })
+        .unwrap();
+
+        assert!(matches!(wait_for_event(&mut db), DbEvent::TodoAdded));
+
+        db.send(DbCommand::LoadTodos).unwrap();
+
+        let event = wait_for_event(&mut db);
+
+        match event {
+            DbEvent::TodosLoaded(todos) => {
+                assert_eq!(todos.len(), 1);
+                assert_eq!(todos[0].title, "Buy milk");
+                assert!(!todos[0].done);
+            }
+            other => {
+                panic!("unexpected event: {other:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn set_todo_done_updates_todo() {
+        let mut db = test_db_handle();
+
+        db.send(DbCommand::AddTodo {
+            title: "Learn Rust".into(),
+        })
+        .unwrap();
+
+        assert!(matches!(wait_for_event(&mut db), DbEvent::TodoAdded));
+
+        db.send(DbCommand::LoadTodos).unwrap();
+
+        let todo = match wait_for_event(&mut db) {
+            DbEvent::TodosLoaded(mut todos) => todos.remove(0),
+            other => {
+                panic!("unexpected event: {other:?}");
+            }
+        };
+
+        db.send(DbCommand::SetTodoDone {
+            id: todo.id,
+            done: true,
+        })
+        .unwrap();
+
+        assert!(matches!(wait_for_event(&mut db), DbEvent::TodoUpdated));
+
+        db.send(DbCommand::LoadTodos).unwrap();
+
+        match wait_for_event(&mut db) {
+            DbEvent::TodosLoaded(todos) => {
+                assert_eq!(todos.len(), 1);
+                assert!(todos[0].done);
+            }
+            other => {
+                panic!("unexpected event: {other:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn delete_todo_removes_todo() {
+        let mut db = test_db_handle();
+
+        db.send(DbCommand::AddTodo {
+            title: "Temporary todo".into(),
+        })
+        .unwrap();
+
+        assert!(matches!(wait_for_event(&mut db), DbEvent::TodoAdded));
+
+        db.send(DbCommand::LoadTodos).unwrap();
+
+        let id = match wait_for_event(&mut db) {
+            DbEvent::TodosLoaded(todos) => todos[0].id,
+            other => {
+                panic!("unexpected event: {other:?}");
+            }
+        };
+
+        db.send(DbCommand::DeleteTodo { id }).unwrap();
+
+        assert!(matches!(wait_for_event(&mut db), DbEvent::TodoDeleted));
+
+        db.send(DbCommand::LoadTodos).unwrap();
+
+        match wait_for_event(&mut db) {
+            DbEvent::TodosLoaded(todos) => {
+                assert!(todos.is_empty());
+            }
+            other => {
+                panic!("unexpected event: {other:?}");
+            }
+        }
     }
 }
