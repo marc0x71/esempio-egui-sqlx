@@ -5,7 +5,7 @@ use modern_egui::theme::{
 
 use crate::{app::TodoApp, db::DBBackend, model::Todo};
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 enum TodoAction {
     Toggle(bool),
     Delete,
@@ -155,5 +155,95 @@ impl Widget for &mut TodoWidget<'_> {
             });
         })
         .response
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use egui_kittest::{Harness, kittest::Queryable};
+
+    fn todo(done: bool) -> Todo {
+        Todo {
+            id: 1,
+            title: "Buy milk".into(),
+            done,
+        }
+    }
+
+    #[test]
+    fn todo_widget_starts_without_action() {
+        let todo = todo(false);
+        let mut widget = TodoWidget::new(&todo);
+        assert!(widget.take_action().is_none());
+    }
+
+    #[test]
+    fn clicking_checkbox_emits_toggle_true() {
+        let todo = todo(false);
+
+        let mut harness = Harness::new_ui_state(
+            |ui, action: &mut Option<TodoAction>| {
+                let mut widget = TodoWidget::new(&todo);
+
+                ui.add(&mut widget);
+
+                if let Some(new_action) = widget.take_action() {
+                    *action = Some(new_action);
+                }
+            },
+            None,
+        );
+
+        harness.get_by_role(egui::accesskit::Role::CheckBox).click();
+        harness.run();
+
+        assert_eq!(harness.state(), &Some(TodoAction::Toggle(true)));
+    }
+
+    #[test]
+    fn clicking_checked_checkbox_emits_toggle_false() {
+        let todo = todo(true);
+
+        let mut harness = Harness::new_ui_state(
+            |ui, action: &mut Option<TodoAction>| {
+                let mut widget = TodoWidget::new(&todo);
+
+                ui.add(&mut widget);
+
+                if let Some(new_action) = widget.take_action() {
+                    *action = Some(new_action);
+                }
+            },
+            None,
+        );
+
+        harness.get_by_role(egui::accesskit::Role::CheckBox).click();
+        harness.run();
+
+        assert!(matches!(harness.state(), Some(TodoAction::Toggle(false))));
+    }
+
+    #[test]
+    fn clicking_delete_emits_delete_action() {
+        let todo = todo(false);
+
+        let mut harness = Harness::new_ui_state(
+            |ui, action: &mut Option<TodoAction>| {
+                let mut widget = TodoWidget::new(&todo);
+
+                ui.add(&mut widget);
+
+                if let Some(new_action) = widget.take_action() {
+                    *action = Some(new_action);
+                }
+            },
+            None,
+        );
+
+        harness.get_by_label("🗑").click();
+        harness.run();
+
+        assert!(matches!(harness.state(), Some(TodoAction::Delete)));
     }
 }
