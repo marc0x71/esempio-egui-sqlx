@@ -97,7 +97,18 @@ impl<B: DbBackend> eframe::App for TodoUi<B> {
                 }
 
                 ui.muted_label("TODOS");
-                if !self.app.todos().is_empty() {
+                if self.app.todos().is_empty() {
+                    egui::CentralPanel::default()
+                        .frame(Frame::new().inner_margin(metrics::PANEL_PADDING))
+                        .show(ui, |ui| {
+                            ui.centered_and_justified(|ui| {
+                                ui.add(
+                                    StyledText::new("No to-do items found.")
+                                        .size(theme::TextSize::Lg),
+                                )
+                            });
+                        });
+                } else {
                     let available_height = ui.available_height();
 
                     egui::ScrollArea::vertical()
