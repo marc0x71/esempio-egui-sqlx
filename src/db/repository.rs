@@ -1,4 +1,4 @@
-use std::{str::FromStr, time::Duration};
+use std::{path::Path, time::Duration};
 
 use sqlx::{
     SqlitePool,
@@ -10,8 +10,9 @@ use crate::model::Todo;
 
 static MIGRATOR: Migrator = sqlx::migrate!();
 
-pub async fn create_pool() -> Result<SqlitePool, sqlx::Error> {
-    let options = SqliteConnectOptions::from_str("sqlite://app.db")?
+pub async fn create_pool(path: &Path) -> Result<SqlitePool, sqlx::Error> {
+    let options = SqliteConnectOptions::new()
+        .filename(path)
         .create_if_missing(true)
         .busy_timeout(Duration::from_secs(5))
         .journal_mode(SqliteJournalMode::Wal);
@@ -23,8 +24,7 @@ pub async fn create_pool() -> Result<SqlitePool, sqlx::Error> {
 }
 
 pub async fn initialize(pool: &SqlitePool) -> Result<(), sqlx::migrate::MigrateError> {
-    MIGRATOR.run(pool).await?;
-    Ok(())
+    MIGRATOR.run(pool).await
 }
 
 pub async fn load_todos(pool: &SqlitePool) -> Result<Vec<Todo>, sqlx::Error> {
