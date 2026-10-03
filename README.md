@@ -75,8 +75,10 @@ Dopo ogni modifica l'app ricarica l'intera lista. È una scelta voluta per tener
 ## Struttura del codice
 
 ```
+migrations/
+└── 0001_create_todos.sql   schema iniziale del database
 src/
-├── main.rs            avvio: runtime Tokio, pool, inizializzazione del DB, eframe
+├── main.rs            avvio: percorso del DB, runtime Tokio, pool, migrazioni, eframe
 ├── model.rs           struct Todo (FromRow)
 ├── ui.rs              TodoUi (eframe::App) e TodoWidget, il widget di una riga
 ├── app.rs             TodoApp: stato dell'applicazione, comandi, gestione degli eventi
@@ -106,7 +108,7 @@ In questo progetto serve soltanto per lo stile: la parte che riguarda egui e sql
 
 ### Il runtime è creato a mano
 
-`main` non usa `#[tokio::main]`: costruisce il runtime esplicitamente, lo usa con `block_on` **solo all'avvio** (creazione del pool e della tabella) e poi lo cede a `DbHandle`. In questo modo il thread principale resta libero per eframe, che vuole governare il proprio event loop.
+`main` non usa `#[tokio::main]`: costruisce il runtime esplicitamente, lo usa con `block_on` **solo all'avvio** (creazione del pool ed esecuzione delle migrazioni) e poi lo cede a `DbHandle`. In questo modo il thread principale resta libero per eframe, che vuole governare il proprio event loop.
 
 ### Interfaccia e logica separate
 
@@ -150,6 +152,12 @@ Questo garantisce che un `LoadTodos` inviato dopo un `AddTodo` veda il nuovo rec
 
 Il database è aperto in modalità WAL e con un `busy_timeout` di 5 secondi, le impostazioni consigliate per SQLite in un'app desktop.
 
+### Schema e migrazioni
+
+Lo schema del database non è scritto nel codice ma nella cartella `migrations/`, un file SQL per ogni modifica. La macro `sqlx::migrate!()` incorpora i file nell'eseguibile al momento della compilazione, e all'avvio `initialize()` applica quelli non ancora eseguiti. sqlx tiene traccia delle migrazioni applicate nella tabella `_sqlx_migrations`, insieme a un checksum di ciascun file.
+
+Per cambiare lo schema si aggiunge un nuovo file con un numero progressivo (per esempio `0002_add_due_date.sql`). Un file già applicato non va mai modificato: sqlx se ne accorgerebbe dal checksum e rifiuterebbe di avviarsi.
+
 ### Chiusura pulita
 
 Alla chiusura della finestra, il `Drop` di `DbHandle`:
@@ -170,7 +178,7 @@ Grazie alla separazione in livelli, ognuno ha i propri test e non ha bisogno deg
 
 | Livello | Cosa verifica | Come |
 |---|---|---|
-| `db/repository.rs` | le query SQL | un database SQLite in memoria per ogni test |
+| `db/repository.rs` | le query SQL e le migrazioni | un database SQLite in memoria per ogni test, con le migrazioni applicate |
 | `db/worker.rs` | la traduzione da comando a evento, errori compresi | chiama `handle_command` direttamente in un `#[tokio::test]` |
 | `db/mod.rs` | il percorso completo attraverso canali e worker | un `DbHandle` vero su database in memoria; i test interrogano `try_recv()` finché l'evento non arriva |
 | `app.rs` | la logica dell'applicazione | un backend finto che implementa `DbBackend` |
@@ -186,7 +194,15 @@ Serve una versione recente di Rust stabile: il progetto usa l'edition 2024, che 
 cargo run
 ```
 
-Al primo avvio viene creato il file `app.db` nella **cartella da cui lanci il comando**, con la tabella `todos`. Mentre l'app è aperta, la modalità WAL crea accanto anche i file `app.db-wal` e `app.db-shm`.
+Il database `app.db` si trova nella cartella dei dati locali dell'utente, determinata con il crate [directories](https://crates.io/crates/directories) secondo le convenzioni di ciascun sistema operativo:
+
+| Sistema | Percorso |
+|---|---|
+| Linux | `~/.local/share/todoapp/app.db` |
+| macOS | `~/Library/Application Support/com.marc0x71.TodoApp/app.db` |
+| Windows | `%LOCALAPPDATA%\marc0x71\TodoApp\data\app.db` |
+
+La cartella viene creata se non esiste, e il percorso effettivo viene stampato sul terminale all'avvio. Mentre l'app è aperta, la modalità WAL crea accanto al database anche i file `app.db-wal` e `app.db-shm`.
 
 ## Possibili evoluzioni
 
@@ -195,8 +211,6 @@ Il progetto resta volutamente minimale. Alcuni passi naturali per portarlo verso
 - **Eventi che trasportano i dati.** Invece di ricaricare l'intera lista dopo ogni modifica, `TodoAdded(Todo)` (con `INSERT ... RETURNING`), `TodoUpdated { id, done }` e `TodoDeleted { id }` permettono di aggiornare lo stato locale direttamente.
 - **Errori di lettura e di scrittura separati.** Dopo un errore di scrittura conviene ricaricare i dati per riallineare la UI; dopo un errore di lettura no, altrimenti si rischia un ciclo di tentativi.
 - **Aggiornamento ottimistico.** Applicare subito le modifiche allo stato locale e riallinearlo solo in caso di errore, così l'interfaccia risponde senza aspettare il database.
-- **Migrazioni** con `sqlx::migrate!()` al posto di `CREATE TABLE IF NOT EXISTS`.
-- **Percorso del database** nella cartella dati dell'utente invece che in quella corrente.
 
 ## Licenza
 
@@ -281,8 +295,10 @@ After every change the app reloads the whole list. This is a deliberate choice t
 ### Code structure
 
 ```
+migrations/
+└── 0001_create_todos.sql   initial database schema
 src/
-├── main.rs            startup: Tokio runtime, pool, DB initialization, eframe
+├── main.rs            startup: DB path, Tokio runtime, pool, migrations, eframe
 ├── model.rs           Todo struct (FromRow)
 ├── ui.rs              TodoUi (eframe::App) and TodoWidget, the widget for one row
 ├── app.rs             TodoApp: application state, commands, event handling
@@ -312,7 +328,7 @@ In this project it is used for styling only: the egui + sqlx part doesn't depend
 
 #### The runtime is built manually
 
-`main` does not use `#[tokio::main]`: it builds the runtime explicitly, uses it with `block_on` **only at startup** (creating the pool and the table) and then hands it over to `DbHandle`. This keeps the main thread free for eframe, which wants to own its event loop.
+`main` does not use `#[tokio::main]`: it builds the runtime explicitly, uses it with `block_on` **only at startup** (creating the pool and running migrations) and then hands it over to `DbHandle`. This keeps the main thread free for eframe, which wants to own its event loop.
 
 #### UI and logic kept apart
 
@@ -356,6 +372,12 @@ This guarantees that a `LoadTodos` sent after an `AddTodo` sees the new record. 
 
 The database is opened in WAL mode with a 5-second `busy_timeout`, the recommended settings for SQLite in a desktop app.
 
+#### Schema and migrations
+
+The database schema isn't written in the code but in the `migrations/` folder, one SQL file per change. The `sqlx::migrate!()` macro embeds the files into the executable at compile time, and at startup `initialize()` applies the ones that haven't run yet. sqlx keeps track of applied migrations in the `_sqlx_migrations` table, together with a checksum of each file.
+
+To change the schema, add a new file with the next number (for example `0002_add_due_date.sql`). A file that has already been applied must never be edited: sqlx would notice from the checksum and refuse to start.
+
 #### Clean shutdown
 
 When the window is closed, the `Drop` implementation of `DbHandle`:
@@ -376,7 +398,7 @@ Thanks to the layered design, each layer has its own tests and doesn't need the 
 
 | Layer | What is tested | How |
 |---|---|---|
-| `db/repository.rs` | the SQL queries | an in-memory SQLite database per test |
+| `db/repository.rs` | the SQL queries and the migrations | an in-memory SQLite database per test, with migrations applied |
 | `db/worker.rs` | mapping commands to events, errors included | calls `handle_command` directly in a `#[tokio::test]` |
 | `db/mod.rs` | the full path through channels and worker | a real `DbHandle` on an in-memory database; tests poll `try_recv()` until the event arrives |
 | `app.rs` | the application logic | a fake backend implementing `DbBackend` |
@@ -392,7 +414,15 @@ You need a recent stable Rust: the project uses the 2024 edition, which requires
 cargo run
 ```
 
-On first launch, an `app.db` file with the `todos` table is created in the **directory you run the command from**. While the app is running, WAL mode also creates `app.db-wal` and `app.db-shm` next to it.
+The `app.db` database lives in the user's local data directory, resolved with the [directories](https://crates.io/crates/directories) crate following each operating system's conventions:
+
+| System | Path |
+|---|---|
+| Linux | `~/.local/share/todoapp/app.db` |
+| macOS | `~/Library/Application Support/com.marc0x71.TodoApp/app.db` |
+| Windows | `%LOCALAPPDATA%\marc0x71\TodoApp\data\app.db` |
+
+The directory is created if it doesn't exist, and the actual path is printed to the terminal at startup. While the app is running, WAL mode also creates `app.db-wal` and `app.db-shm` next to the database.
 
 ### Possible improvements
 
@@ -401,8 +431,6 @@ The project is intentionally minimal. Some natural next steps towards a real app
 - **Events that carry data.** Instead of reloading the whole list after each change, `TodoAdded(Todo)` (with `INSERT ... RETURNING`), `TodoUpdated { id, done }` and `TodoDeleted { id }` let the app update its local state directly.
 - **Separate read and write errors.** After a write error it makes sense to reload the data to resync the UI; after a read error it doesn't, otherwise you risk an endless retry loop.
 - **Optimistic updates.** Apply changes to the local state immediately and resync only on error, so the UI responds without waiting for the database.
-- **Migrations** with `sqlx::migrate!()` instead of `CREATE TABLE IF NOT EXISTS`.
-- **Database path** in the user's data directory instead of the current one.
 
 ### License
 
