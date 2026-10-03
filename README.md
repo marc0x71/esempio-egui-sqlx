@@ -75,6 +75,7 @@ Dopo ogni modifica l'app ricarica l'intera lista. È una scelta voluta per tener
 ## Struttura del codice
 
 ```
+build.rs               ricompila quando cambia la cartella migrations/
 migrations/
 └── 0001_create_todos.sql   schema iniziale del database
 src/
@@ -154,7 +155,7 @@ Il database è aperto in modalità WAL e con un `busy_timeout` di 5 secondi, le 
 
 ### Schema e migrazioni
 
-Lo schema del database non è scritto nel codice ma nella cartella `migrations/`, un file SQL per ogni modifica. La macro `sqlx::migrate!()` incorpora i file nell'eseguibile al momento della compilazione, e all'avvio `initialize()` applica quelli non ancora eseguiti. sqlx tiene traccia delle migrazioni applicate nella tabella `_sqlx_migrations`, insieme a un checksum di ciascun file.
+Lo schema del database non è scritto nel codice ma nella cartella `migrations/`, un file SQL per ogni modifica. La macro `sqlx::migrate!()` incorpora i file nell'eseguibile al momento della compilazione, e all'avvio `initialize()` applica quelli non ancora eseguiti. sqlx tiene traccia delle migrazioni applicate nella tabella `_sqlx_migrations`, insieme a un checksum di ciascun file. Il file `build.rs` dice a Cargo di ricompilare quando cambia la cartella `migrations/`, altrimenti una nuova migrazione potrebbe non finire nell'eseguibile.
 
 Per cambiare lo schema si aggiunge un nuovo file con un numero progressivo (per esempio `0002_add_due_date.sql`). Un file già applicato non va mai modificato: sqlx se ne accorgerebbe dal checksum e rifiuterebbe di avviarsi.
 
@@ -295,6 +296,7 @@ After every change the app reloads the whole list. This is a deliberate choice t
 ### Code structure
 
 ```
+build.rs               rebuilds when the migrations/ folder changes
 migrations/
 └── 0001_create_todos.sql   initial database schema
 src/
@@ -374,7 +376,7 @@ The database is opened in WAL mode with a 5-second `busy_timeout`, the recommend
 
 #### Schema and migrations
 
-The database schema isn't written in the code but in the `migrations/` folder, one SQL file per change. The `sqlx::migrate!()` macro embeds the files into the executable at compile time, and at startup `initialize()` applies the ones that haven't run yet. sqlx keeps track of applied migrations in the `_sqlx_migrations` table, together with a checksum of each file.
+The database schema isn't written in the code but in the `migrations/` folder, one SQL file per change. The `sqlx::migrate!()` macro embeds the files into the executable at compile time, and at startup `initialize()` applies the ones that haven't run yet. sqlx keeps track of applied migrations in the `_sqlx_migrations` table, together with a checksum of each file. The `build.rs` file tells Cargo to rebuild when the `migrations/` folder changes; otherwise a new migration might not end up in the executable.
 
 To change the schema, add a new file with the next number (for example `0002_add_due_date.sql`). A file that has already been applied must never be edited: sqlx would notice from the checksum and refuse to start.
 
