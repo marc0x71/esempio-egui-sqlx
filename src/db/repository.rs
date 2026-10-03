@@ -1,3 +1,5 @@
+//! SQL queries, one async function per operation.
+
 use std::{path::Path, time::Duration};
 
 use sqlx::{
@@ -8,8 +10,13 @@ use sqlx::{
 
 use crate::model::Todo;
 
+/// Migrations from the `migrations/` folder, embedded at compile time.
 static MIGRATOR: Migrator = sqlx::migrate!();
 
+/// Opens the SQLite database at `path`, creating it if missing.
+///
+/// Uses WAL journaling and a 5-second busy timeout, the recommended
+/// settings for a desktop application.
 pub async fn create_pool(path: &Path) -> Result<SqlitePool, sqlx::Error> {
     let options = SqliteConnectOptions::new()
         .filename(path)
@@ -23,10 +30,12 @@ pub async fn create_pool(path: &Path) -> Result<SqlitePool, sqlx::Error> {
         .await
 }
 
+/// Applies any pending migrations. Safe to call on every startup.
 pub async fn initialize(pool: &SqlitePool) -> Result<(), sqlx::migrate::MigrateError> {
     MIGRATOR.run(pool).await
 }
 
+/// Returns all todos, newest first.
 pub async fn load_todos(pool: &SqlitePool) -> Result<Vec<Todo>, sqlx::Error> {
     sqlx::query_as::<_, Todo>(
         r#"
@@ -39,6 +48,7 @@ pub async fn load_todos(pool: &SqlitePool) -> Result<Vec<Todo>, sqlx::Error> {
     .await
 }
 
+/// Inserts a new, not yet completed todo and returns its id.
 pub async fn add_todo(pool: &SqlitePool, title: &str) -> Result<i64, sqlx::Error> {
     let result = sqlx::query(
         r#"
@@ -53,6 +63,7 @@ pub async fn add_todo(pool: &SqlitePool, title: &str) -> Result<i64, sqlx::Error
     Ok(result.last_insert_rowid())
 }
 
+/// Marks a todo as done or not done. Does nothing if `id` doesn't exist.
 pub async fn set_todo_done(pool: &SqlitePool, id: i64, done: bool) -> Result<(), sqlx::Error> {
     sqlx::query(
         r#"
@@ -69,6 +80,7 @@ pub async fn set_todo_done(pool: &SqlitePool, id: i64, done: bool) -> Result<(),
     Ok(())
 }
 
+/// Deletes a todo. Does nothing if `id` doesn't exist.
 pub async fn delete_todo(pool: &SqlitePool, id: i64) -> Result<(), sqlx::Error> {
     sqlx::query(
         r#"

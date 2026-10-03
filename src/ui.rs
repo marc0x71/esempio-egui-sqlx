@@ -1,3 +1,5 @@
+//! The egui interface: the main window and the widget for a single todo.
+
 use eframe::egui::{self, Frame, RichText, Widget};
 use modern_egui::theme::{
     self, StyledText, UiButtons, UiInputs, UiMetrics, UiPanels, UiText, metrics,
@@ -5,12 +7,19 @@ use modern_egui::theme::{
 
 use crate::{app::TodoApp, db::DbBackend, model::Todo};
 
+/// What the user did on a todo row.
 #[derive(Debug, PartialEq, Eq)]
 enum TodoAction {
+    /// The checkbox was clicked. Contains the new state.
     Toggle(bool),
     Delete,
 }
 
+/// The eframe application: draws the window and forwards user actions
+/// to [`TodoApp`].
+///
+/// It only owns state that matters to the interface: the title being typed
+/// and the last error to show, until the user dismisses it.
 pub struct TodoUi<B: DbBackend> {
     app: TodoApp<B>,
     new_title: String,
@@ -18,6 +27,7 @@ pub struct TodoUi<B: DbBackend> {
 }
 
 impl<B: DbBackend> TodoUi<B> {
+    /// Applies the modern-egui theme in dark mode and wraps `app`.
     pub fn new(cc: &eframe::CreationContext<'_>, app: TodoApp<B>) -> Self {
         theme::apply(&cc.egui_ctx);
         cc.egui_ctx.set_theme(egui::ThemePreference::Dark);
@@ -31,6 +41,7 @@ impl<B: DbBackend> TodoUi<B> {
 }
 
 impl<B: DbBackend> eframe::App for TodoUi<B> {
+    /// Processes the database events before the frame is drawn.
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         let update = self.app.update();
         if let Some(error) = update.error {
@@ -116,6 +127,11 @@ impl<B: DbBackend> eframe::App for TodoUi<B> {
     }
 }
 
+/// Widget for a single todo row: checkbox, title and delete button.
+///
+/// It doesn't act on user input by itself: it records the action, which
+/// the caller retrieves with [`take_action`](Self::take_action) after
+/// adding the widget to the `Ui`.
 pub struct TodoWidget<'a> {
     todo: &'a Todo,
     action: Option<TodoAction>,
@@ -126,6 +142,7 @@ impl<'a> TodoWidget<'a> {
         Self { todo, action: None }
     }
 
+    /// Returns the action performed in this frame, if any, and clears it.
     fn take_action(&mut self) -> Option<TodoAction> {
         self.action.take()
     }

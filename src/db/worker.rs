@@ -1,3 +1,5 @@
+//! Translates [`DbCommand`]s into repository calls.
+
 use sqlx::SqlitePool;
 
 use crate::db::{
@@ -5,6 +7,10 @@ use crate::db::{
     repository::{add_todo, delete_todo, load_todos, set_todo_done},
 };
 
+/// Runs a single command against the database and returns the resulting event.
+///
+/// Errors are never propagated: they become [`DbEvent::Error`], so the worker
+/// loop keeps running.
 pub async fn handle_command(pool: &SqlitePool, command: DbCommand) -> DbEvent {
     match command {
         DbCommand::LoadTodos => match load_todos(pool).await {

@@ -1,3 +1,10 @@
+//! Database access running in the background.
+//!
+//! The application never talks to SQLite directly: it sends [`DbCommand`]s
+//! and later receives [`DbEvent`]s through a [`DbBackend`]. The real
+//! implementation, [`DbHandle`], forwards the commands to a worker task
+//! running on a Tokio runtime. See the README for an overview.
+
 use crate::{db::worker::handle_command, model::Todo};
 use eframe::egui;
 use sqlx::SqlitePool;
@@ -6,6 +13,7 @@ use tokio::{runtime::Runtime, sync::mpsc, task::JoinHandle};
 pub mod repository;
 pub mod worker;
 
+/// A request for the database worker.
 #[derive(Debug)]
 pub enum DbCommand {
     LoadTodos,
@@ -14,6 +22,10 @@ pub enum DbCommand {
     DeleteTodo { id: i64 },
 }
 
+/// The outcome of a [`DbCommand`], sent back by the worker.
+///
+/// Write commands only report success: to see the updated data,
+/// send a [`DbCommand::LoadTodos`].
 #[derive(Debug)]
 pub enum DbEvent {
     TodosLoaded(Vec<Todo>),
@@ -21,14 +33,33 @@ pub enum DbEvent {
     TodoUpdated,
     TodoDeleted,
 
+    /// A command failed. Contains the error message.
     Error(String),
 }
 
+/// Asynchronous channel to the database, as seen by the application.
+///
+/// Neither method blocks: [`send`](Self::send) enqueues a command and
+/// returns immediately, while results arrive later as [`DbEvent`]s
+/// through [`try_recv`](Self::try_recv). Commands are processed in the
+/// order they are sent.
 pub trait DbBackend {
+    /// Enqueues a command. Returns it back if the worker is no longer running.
     fn send(&self, command: DbCommand) -> Result<(), DbCommand>;
+
+    /// Returns the next available event, or `None` if there is none yet.
     fn try_recv(&mut self) -> Option<DbEvent>;
 }
 
+/// [`DbBackend`] backed by a worker task running on its own Tokio runtime.
+///
+/// The worker processes one command at a time and, after sending each event,
+/// calls [`egui::Context::request_repaint`] so that the UI picks it up
+/// without waiting for user input.
+///
+/// Dropping a `DbHandle` waits for the worker to finish the commands still
+/// in the queue, then shuts down the runtime: closing the window may take
+/// as long as the pending queries.
 pub struct DbHandle {
     command_tx: Option<mpsc::UnboundedSender<DbCommand>>,
     event_rx: mpsc::UnboundedReceiver<DbEvent>,
@@ -37,6 +68,8 @@ pub struct DbHandle {
 }
 
 impl DbHandle {
+    /// Spawns the worker on `runtime`, taking ownership of both the runtime
+    /// and the pool. `ctx` is used to wake up the UI when an event is ready.
     pub fn new(runtime: Runtime, pool: SqlitePool, ctx: egui::Context) -> DbHandle {
         let (command_tx, mut command_rx) = mpsc::unbounded_channel::<DbCommand>();
         let (event_tx, event_rx) = mpsc::unbounded_channel::<DbEvent>();

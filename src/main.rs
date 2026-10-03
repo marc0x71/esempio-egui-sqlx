@@ -1,3 +1,6 @@
+//! Startup: resolves the database path, runs the migrations on a Tokio
+//! runtime, then opens the eframe window.
+
 mod app;
 mod db;
 mod model;
@@ -16,6 +19,8 @@ use crate::{
     ui::TodoUi,
 };
 
+/// Returns the path of the database in the user's local data directory,
+/// creating the directory if it doesn't exist.
 pub fn database_path() -> std::io::Result<PathBuf> {
     let dirs = ProjectDirs::from("com", "marc0x71", "TodoApp").ok_or_else(|| {
         std::io::Error::new(

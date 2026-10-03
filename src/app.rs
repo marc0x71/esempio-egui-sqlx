@@ -1,19 +1,33 @@
+//! Application state and logic, independent of egui and of the actual
+//! database implementation.
+
 use crate::{
     db::{DbBackend, DbCommand, DbEvent},
     model::Todo,
 };
 
+/// What happened during a call to [`TodoApp::update`].
 pub struct UpdateResult {
+    /// The state changed and the UI should be redrawn.
     pub changed: bool,
+    /// The last error reported by the database, if any.
     pub error: Option<String>,
 }
 
+/// Application state: the list of todos and the access to the database.
+///
+/// It knows nothing about egui or Tokio and only talks to a [`DbBackend`],
+/// so it can be tested with a fake one.
+///
+/// Write operations are asynchronous: their effect shows up in
+/// [`todos`](Self::todos) only after a later call to [`update`](Self::update).
 pub struct TodoApp<B: DbBackend> {
     db: B,
     todos: Vec<Todo>,
 }
 
 impl<B: DbBackend> TodoApp<B> {
+    /// Creates the application and requests the initial load of the todos.
     pub fn new(db: B) -> Self {
         let mut app = Self {
             db,
@@ -29,6 +43,7 @@ impl<B: DbBackend> TodoApp<B> {
         let _ = self.db.send(DbCommand::LoadTodos);
     }
 
+    /// Adds a todo with the given title, trimmed. Blank titles are ignored.
     pub(crate) fn add_todo(&self, new_title: String) {
         let title = new_title.trim();
 
@@ -41,6 +56,11 @@ impl<B: DbBackend> TodoApp<B> {
         });
     }
 
+    /// Processes all pending database events. Must be called once per frame.
+    ///
+    /// After a successful write the list is reloaded, so the state always
+    /// matches the database. If several errors arrive together, only the
+    /// last one is reported.
     pub(crate) fn update(&mut self) -> UpdateResult {
         let mut changed = false;
         let mut error = None;
@@ -70,6 +90,7 @@ impl<B: DbBackend> TodoApp<B> {
         let _ = self.db.send(DbCommand::DeleteTodo { id });
     }
 
+    /// The todos as of the last [`update`](Self::update), newest first.
     pub fn todos(&self) -> &[Todo] {
         &self.todos
     }
