@@ -2,10 +2,13 @@ use std::{str::FromStr, time::Duration};
 
 use sqlx::{
     SqlitePool,
+    migrate::Migrator,
     sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions},
 };
 
 use crate::model::Todo;
+
+static MIGRATOR: Migrator = sqlx::migrate!();
 
 pub async fn create_pool() -> Result<SqlitePool, sqlx::Error> {
     let options = SqliteConnectOptions::from_str("sqlite://app.db")?
@@ -19,19 +22,8 @@ pub async fn create_pool() -> Result<SqlitePool, sqlx::Error> {
         .await
 }
 
-pub async fn initialize(pool: &SqlitePool) -> Result<(), sqlx::Error> {
-    sqlx::query(
-        r#"
-        CREATE TABLE IF NOT EXISTS todos (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            title TEXT NOT NULL,
-            done BOOLEAN NOT NULL DEFAULT FALSE
-        )
-        "#,
-    )
-    .execute(pool)
-    .await?;
-
+pub async fn initialize(pool: &SqlitePool) -> Result<(), sqlx::migrate::MigrateError> {
+    MIGRATOR.run(pool).await?;
     Ok(())
 }
 
