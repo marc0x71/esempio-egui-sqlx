@@ -1,5 +1,5 @@
 use crate::{
-    db::{DBBackend, DbCommand, DbEvent},
+    db::{DbBackend, DbCommand, DbEvent},
     model::Todo,
 };
 
@@ -8,12 +8,12 @@ pub struct UpdateResult {
     pub error: Option<String>,
 }
 
-pub struct TodoApp<B: DBBackend> {
+pub struct TodoApp<B: DbBackend> {
     db: B,
     todos: Vec<Todo>,
 }
 
-impl<B: DBBackend> TodoApp<B> {
+impl<B: DbBackend> TodoApp<B> {
     pub fn new(db: B) -> Self {
         let mut app = Self {
             db,
@@ -80,7 +80,7 @@ mod tests {
     use std::{cell::RefCell, collections::VecDeque, rc::Rc};
 
     use super::*;
-    use crate::db::{DBBackend, DbCommand, DbEvent};
+    use crate::db::{DbBackend, DbCommand, DbEvent};
 
     struct FakeDb {
         commands: Rc<RefCell<Vec<DbCommand>>>,
@@ -115,7 +115,7 @@ mod tests {
         }
     }
 
-    impl DBBackend for FakeDb {
+    impl DbBackend for FakeDb {
         fn send(&self, command: DbCommand) -> Result<(), DbCommand> {
             self.commands.borrow_mut().push(command);
             Ok(())

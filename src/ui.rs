@@ -3,7 +3,7 @@ use modern_egui::theme::{
     self, StyledText, UiButtons, UiInputs, UiMetrics, UiPanels, UiText, metrics,
 };
 
-use crate::{app::TodoApp, db::DBBackend, model::Todo};
+use crate::{app::TodoApp, db::DbBackend, model::Todo};
 
 #[derive(Debug, PartialEq, Eq)]
 enum TodoAction {
@@ -11,13 +11,13 @@ enum TodoAction {
     Delete,
 }
 
-pub struct TodoUi<B: DBBackend> {
+pub struct TodoUi<B: DbBackend> {
     app: TodoApp<B>,
     new_title: String,
     last_error: Option<String>,
 }
 
-impl<B: DBBackend> TodoUi<B> {
+impl<B: DbBackend> TodoUi<B> {
     pub fn new(cc: &eframe::CreationContext<'_>, app: TodoApp<B>) -> Self {
         theme::apply(&cc.egui_ctx);
         cc.egui_ctx.set_theme(egui::ThemePreference::Dark);
@@ -30,7 +30,7 @@ impl<B: DBBackend> TodoUi<B> {
     }
 }
 
-impl<B: DBBackend> eframe::App for TodoUi<B> {
+impl<B: DbBackend> eframe::App for TodoUi<B> {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         let update = self.app.update();
         if let Some(error) = update.error {

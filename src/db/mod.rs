@@ -24,7 +24,7 @@ pub enum DbEvent {
     Error(String),
 }
 
-pub trait DBBackend {
+pub trait DbBackend {
     fn send(&self, command: DbCommand) -> Result<(), DbCommand>;
     fn try_recv(&mut self) -> Option<DbEvent>;
 }
@@ -59,7 +59,7 @@ impl DbHandle {
     }
 }
 
-impl DBBackend for DbHandle {
+impl DbBackend for DbHandle {
     fn send(&self, command: DbCommand) -> Result<(), DbCommand> {
         match &self.command_tx {
             Some(tx) => tx.send(command).map_err(|e| e.0),
