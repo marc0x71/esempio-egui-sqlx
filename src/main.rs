@@ -1,12 +1,16 @@
 mod app;
 mod db;
 mod model;
+mod ui;
 
 use app::TodoApp;
 
-use crate::db::{
-    DbHandle,
-    repository::{create_pool, initialize},
+use crate::{
+    db::{
+        DbHandle,
+        repository::{create_pool, initialize},
+    },
+    ui::TodoUi,
 };
 
 fn main() -> eframe::Result<()> {
@@ -28,7 +32,8 @@ fn main() -> eframe::Result<()> {
         eframe::NativeOptions::default(),
         Box::new(move |cc| {
             let db = DbHandle::new(runtime, pool, cc.egui_ctx.clone());
-            Ok(Box::new(TodoApp::new(cc, db)))
+            let app = TodoApp::new(db);
+            Ok(Box::new(TodoUi::new(cc, app)))
         }),
     )
 }
