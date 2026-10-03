@@ -22,6 +22,11 @@ pub enum DbEvent {
     Error(String),
 }
 
+pub trait DBBackend {
+    fn send(&self, command: DbCommand) -> Result<(), DbCommand>;
+    fn try_recv(&mut self) -> Option<DbEvent>;
+}
+
 pub struct DbHandle {
     command_tx: Option<mpsc::UnboundedSender<DbCommand>>,
     event_rx: mpsc::UnboundedReceiver<DbEvent>,
@@ -50,15 +55,17 @@ impl DbHandle {
             runtime,
         }
     }
+}
 
-    pub fn send(&self, command: DbCommand) -> Result<(), DbCommand> {
+impl DBBackend for DbHandle {
+    fn send(&self, command: DbCommand) -> Result<(), DbCommand> {
         match &self.command_tx {
             Some(tx) => tx.send(command).map_err(|e| e.0),
             None => Err(command),
         }
     }
 
-    pub fn try_recv(&mut self) -> Option<DbEvent> {
+    fn try_recv(&mut self) -> Option<DbEvent> {
         self.event_rx.try_recv().ok()
     }
 }

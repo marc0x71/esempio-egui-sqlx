@@ -1,5 +1,5 @@
 use crate::{
-    db::{DbCommand, DbEvent, DbHandle},
+    db::{DBBackend, DbCommand, DbEvent},
     model::Todo,
 };
 
@@ -8,13 +8,13 @@ pub struct UpdateResult {
     pub error: Option<String>,
 }
 
-pub struct TodoApp {
-    db: DbHandle,
+pub struct TodoApp<B: DBBackend> {
+    db: B,
     todos: Vec<Todo>,
 }
 
-impl TodoApp {
-    pub fn new(db: DbHandle) -> Self {
+impl<B: DBBackend> TodoApp<B> {
+    pub fn new(db: B) -> Self {
         let mut app = Self {
             db,
             todos: Vec::new(),
